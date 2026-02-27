@@ -66,13 +66,14 @@ def generate_outputs(req: GenerateRequest):
 
     # Render base URL — works both locally and on Render
     # We build a relative path; ChatGPT will see the full URL
-    view_path = f"/view/{session_id}"
+    BASE_URL = "https://dashboard-rmj8.onrender.com"
+    view_path = f"{BASE_URL}/view/{session_id}"
 
     return JSONResponse({
         "success": True,
         "session_id": session_id,
         "view_url": view_path,
-        "message": f"Reporte generado. Abre: {view_path}",
+        "message": f"Reporte listo. Abre este enlace: {view_path}",
         "total_news": data.get("metadata", {}).get("total_news", "?"),
     })
 
@@ -555,3 +556,4 @@ buildFooter();
 </body>
 </html>"""
     return HTMLResponse(html)
+
