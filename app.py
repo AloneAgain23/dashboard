@@ -30,7 +30,7 @@ def generate_outputs(p: Payload):
             n["Enlace"] = n["Enlace"].strip().replace("\n", "").replace("\r", "")
 
     # 3) Leer tu HTML plantilla (inyectado)
-    with open("dashboard_geopolitico_inyectado.html", "r", encoding="utf-8") as f:
+    with open("dashboard_template.html", "r", encoding="utf-8") as f:
         html_template = f.read()
 
     injected_json = json.dumps(data, ensure_ascii=False)  # <-- lo inyecta directo
@@ -47,3 +47,4 @@ def generate_outputs(p: Payload):
             }
         ]
     }
+
