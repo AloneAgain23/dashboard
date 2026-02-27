@@ -1,0 +1,56 @@
+openapi: 3.1.0
+info:
+  title: Vigilancia Prospectiva API
+  description: Genera reportes HTML de noticias geopolíticas desde un JSON estructurado.
+  version: 1.0.0
+servers:
+  - url: https://TU-APP.onrender.com
+paths:
+  /generateOutputs:
+    post:
+      operationId: generateOutputs
+      summary: Recibe el JSON de noticias y devuelve una URL para ver el reporte HTML
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - start
+                - end
+                - noticias_json
+              properties:
+                start:
+                  type: string
+                  description: Fecha inicio en formato YYYY-MM-DD
+                  example: "2025-01-01"
+                end:
+                  type: string
+                  description: Fecha fin en formato YYYY-MM-DD
+                  example: "2025-01-31"
+                variable:
+                  type: string
+                  description: Variable analizada (opcional)
+                  example: "VARIABLE 1"
+                noticias_json:
+                  description: Objeto JSON con metadata y array de noticias (puede ser string o objeto)
+      responses:
+        "200":
+          description: URL del reporte generado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  session_id:
+                    type: string
+                  view_url:
+                    type: string
+                    description: Ruta relativa del reporte, ej /view/abc123
+                  message:
+                    type: string
+                  total_news:
+                    description: Total de noticias procesadas
