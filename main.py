@@ -17,9 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage: {session_id: {"data": {...}, "expires": datetime}}
 sessions = {}
-
 SESSION_TTL_HOURS = 24
 
 
@@ -34,7 +32,7 @@ class GenerateRequest(BaseModel):
     start: str
     end: str
     variable: Optional[str] = None
-    noticias_json: Any  # accepts object or string
+    noticias_json: Any
 
 
 @app.get("/")
@@ -46,7 +44,6 @@ def root():
 def generate_outputs(req: GenerateRequest):
     cleanup_sessions()
 
-    # Accept noticias_json as object or JSON string
     if isinstance(req.noticias_json, str):
         try:
             data = json.loads(req.noticias_json)
@@ -64,8 +61,6 @@ def generate_outputs(req: GenerateRequest):
         "expires": datetime.utcnow() + timedelta(hours=SESSION_TTL_HOURS),
     }
 
-    # Render base URL — works both locally and on Render
-    # We build a relative path; ChatGPT will see the full URL
     BASE_URL = "https://dashboard-rmj8.onrender.com"
     view_path = f"{BASE_URL}/view/{session_id}"
 
@@ -91,20 +86,22 @@ def get_data(session_id: str):
 def view_report(session_id: str):
     cleanup_sessions()
     if session_id not in sessions:
-        return HTMLResponse("""
-        <!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-        <title>Sesión expirada</title>
-        <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0f0f0f;color:#fff;}
-        .box{text-align:center;padding:2rem;} h1{color:#e53e3e;} p{color:#aaa;}</style></head>
-        <body><div class="box"><h1>⚠️ Sesión no disponible</h1>
-        <p>Esta sesión expiró o no existe. Genera un nuevo reporte desde ChatGPT.</p></div></body></html>
-        """, status_code=404)
+        return HTMLResponse("""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><title>Sesión expirada</title>
+<style>
+  body{font-family:'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;
+  min-height:100vh;margin:0;background:#f5f5f5;}
+  .box{text-align:center;padding:3rem;background:#fff;border-radius:12px;
+  box-shadow:0 4px 24px rgba(0,0,0,0.08);max-width:400px;}
+  h1{color:#C8102E;font-size:1.4rem;margin-bottom:1rem;}
+  p{color:#666;font-size:0.9rem;}
+</style></head>
+<body><div class="box">
+  <h1>⚠️ Sesión no disponible</h1>
+  <p>Esta sesión expiró o no existe.<br>Genera un nuevo reporte desde ChatGPT.</p>
+</div></body></html>""", status_code=404)
 
     s = sessions[session_id]
-    noticias = s["data"].get("noticias", [])
-    metadata = s["data"].get("metadata", {})
-
-    # Serialize data for embedding in HTML
     data_json = json.dumps(s["data"], ensure_ascii=False)
 
     html = f"""<!DOCTYPE html>
@@ -112,335 +109,327 @@ def view_report(session_id: str):
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Vigilancia Prospectiva — {s['start']} / {s['end']}</title>
+  <title>Monitor de Noticias — CEPLAN</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     :root {{
-      --bg: #080b0f;
-      --surface: #0e1318;
-      --surface2: #151c24;
-      --border: #1e2a35;
-      --accent: #00d4ff;
-      --accent2: #ff6b35;
-      --accent3: #7fff6b;
-      --text: #e8edf2;
-      --muted: #5a6a78;
-      --h1c: #ff6b35;
-      --h2c: #00d4ff;
-      --h3c: #7fff6b;
+      --rojo:       #C8102E;
+      --rojo-dark:  #9B0B22;
+      --rojo-light: #FDF0F2;
+      --rojo-mid:   #E8C0C8;
+      --gris:       #F7F7F7;
+      --gris2:      #EFEFEF;
+      --borde:      #E0E0E0;
+      --texto:      #1A1A1A;
+      --muted:      #6B6B6B;
+      --blanco:     #FFFFFF;
+      --h1:         #C8102E;
+      --h2:         #D4700A;
+      --h3:         #1A7A3C;
     }}
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     html {{ scroll-behavior: smooth; }}
     body {{
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Lora', serif;
+      background: var(--gris);
+      color: var(--texto);
+      font-family: 'Source Sans 3', sans-serif;
       font-size: 15px;
-      line-height: 1.7;
-      min-height: 100vh;
-    }}
-
-    /* NOISE OVERLAY */
-    body::before {{
-      content: '';
-      position: fixed; inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-      pointer-events: none; z-index: 0;
+      line-height: 1.6;
     }}
 
     /* HEADER */
     header {{
+      background: var(--rojo);
       position: sticky; top: 0; z-index: 100;
-      background: rgba(8,11,15,0.92);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--border);
-      padding: 1rem 2rem;
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 1rem;
+      box-shadow: 0 2px 12px rgba(200,16,46,0.35);
     }}
-    .logo {{
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: 1.1rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--accent);
+    .header-inner {{
+      max-width: 1280px; margin: 0 auto;
+      padding: 0.85rem 2rem;
+      display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
     }}
-    .logo span {{ color: var(--accent2); }}
+    .header-left {{ display: flex; align-items: center; gap: 1rem; }}
+    .header-title {{
+      font-size: 1rem; font-weight: 700;
+      letter-spacing: 0.04em; text-transform: uppercase; color: #fff;
+      border-left: 2px solid rgba(255,255,255,0.4); padding-left: 1rem;
+    }}
+    .header-title span {{
+      display: block; font-size: 0.63rem; font-weight: 400;
+      opacity: 0.82; letter-spacing: 0.08em; margin-top: 1px;
+    }}
     .date-badge {{
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.72rem;
-      color: var(--muted);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      padding: 0.3rem 0.7rem;
-      border-radius: 4px;
+      background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 4px; padding: 0.3rem 0.8rem;
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; color: #fff;
     }}
 
     /* HERO */
     .hero {{
-      position: relative;
-      padding: 4rem 2rem 3rem;
-      max-width: 1200px;
-      margin: 0 auto;
+      background: var(--blanco);
+      border-bottom: 4px solid var(--rojo);
+      padding: 2rem 2rem 1.5rem;
     }}
-    .hero-label {{
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.7rem;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--accent);
-      margin-bottom: 0.8rem;
+    .hero-inner {{ max-width: 1280px; margin: 0 auto; }}
+    .hero-eyebrow {{
+      font-size: 0.68rem; font-weight: 700;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--rojo); margin-bottom: 0.4rem;
     }}
     .hero h1 {{
-      font-family: 'Syne', sans-serif;
-      font-size: clamp(2rem, 5vw, 3.5rem);
-      font-weight: 800;
-      line-height: 1.1;
-      color: var(--text);
-      margin-bottom: 1.5rem;
+      font-family: 'Source Serif 4', serif;
+      font-size: clamp(1.7rem, 3.5vw, 2.6rem);
+      font-weight: 600; color: var(--texto); line-height: 1.15; margin-bottom: 0.5rem;
     }}
-    .hero h1 em {{ font-style: normal; color: var(--accent); }}
+    .hero h1 em {{ font-style: normal; color: var(--rojo); }}
+    .variable-tag {{
+      display: inline-block;
+      background: var(--rojo-light); border: 1px solid var(--rojo-mid);
+      color: var(--rojo-dark);
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 0.25rem 0.8rem; border-radius: 3px;
+    }}
 
-    /* STATS BAR */
+    /* STATS */
     .stats-bar {{
+      max-width: 1280px; margin: 1.5rem auto 0;
+      padding: 0 2rem;
       display: flex; flex-wrap: wrap; gap: 1rem;
-      margin-bottom: 2rem;
     }}
     .stat {{
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      padding: 0.8rem 1.2rem;
+      background: var(--blanco);
+      border: 1px solid var(--borde);
+      border-top: 3px solid var(--rojo);
       border-radius: 6px;
-      flex: 1; min-width: 130px;
+      padding: 1rem 1.4rem;
+      flex: 1; min-width: 110px;
     }}
     .stat-num {{
-      font-family: 'Syne', sans-serif;
-      font-size: 1.8rem;
-      font-weight: 800;
-      color: var(--accent);
-      line-height: 1;
+      font-family: 'Source Serif 4', serif;
+      font-size: 2rem; font-weight: 600; color: var(--rojo); line-height: 1;
     }}
     .stat-label {{
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.65rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--muted);
-      margin-top: 0.2rem;
+      font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--muted); margin-top: 0.2rem;
     }}
 
-    /* FILTERS */
-    .filters {{
-      max-width: 1200px;
-      margin: 0 auto 2rem;
+    /* TOOLBAR */
+    .toolbar {{
+      max-width: 1280px; margin: 1.5rem auto 1rem;
       padding: 0 2rem;
-      display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+      display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center;
     }}
+    .filter-group {{ display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }}
     .filter-label {{
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.65rem;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--muted);
-      margin-right: 0.3rem;
+      font-size: 0.67rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
     }}
     .filter-btn {{
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.7rem;
-      padding: 0.3rem 0.8rem;
-      border-radius: 3px;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--muted);
-      cursor: pointer;
-      transition: all 0.15s;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 0.72rem; font-weight: 700;
+      padding: 0.32rem 0.9rem; border-radius: 4px;
+      border: 1.5px solid var(--borde);
+      background: var(--blanco); color: var(--muted);
+      cursor: pointer; text-transform: uppercase; letter-spacing: 0.08em;
+      transition: all 0.14s;
     }}
-    .filter-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
-    .filter-btn.active {{ background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }}
-    .filter-btn.h1.active {{ background: var(--h1c); border-color: var(--h1c); }}
-    .filter-btn.h2.active {{ background: var(--h2c); border-color: var(--h2c); color: var(--bg); }}
-    .filter-btn.h3.active {{ background: var(--h3c); border-color: var(--h3c); color: var(--bg); }}
+    .filter-btn:hover {{ border-color: var(--rojo); color: var(--rojo); }}
+    .filter-btn.active {{ background: var(--rojo); border-color: var(--rojo); color: #fff; }}
+    .filter-btn.h1.active {{ background: var(--h1); border-color: var(--h1); color: #fff; }}
+    .filter-btn.h2.active {{ background: var(--h2); border-color: var(--h2); color: #fff; }}
+    .filter-btn.h3.active {{ background: var(--h3); border-color: var(--h3); color: #fff; }}
 
-    /* SEARCH */
-    .search-wrap {{
-      max-width: 1200px;
-      margin: 0 auto 2rem;
-      padding: 0 2rem;
-    }}
     .search-input {{
-      width: 100%; max-width: 480px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 0.6rem 1rem;
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.8rem;
-      color: var(--text);
-      outline: none;
-      transition: border-color 0.15s;
+      flex: 1; min-width: 200px; max-width: 340px;
+      background: var(--blanco); border: 1.5px solid var(--borde);
+      border-radius: 4px; padding: 0.4rem 0.9rem;
+      font-family: 'Source Sans 3', sans-serif; font-size: 0.82rem;
+      color: var(--texto); outline: none; transition: border-color 0.14s;
     }}
-    .search-input:focus {{ border-color: var(--accent); }}
-    .search-input::placeholder {{ color: var(--muted); }}
+    .search-input:focus {{ border-color: var(--rojo); }}
+    .search-input::placeholder {{ color: #bbb; }}
+
+    .btn-excel {{
+      margin-left: auto;
+      display: flex; align-items: center; gap: 0.4rem;
+      background: var(--blanco); border: 1.5px solid #1D6F42; color: #1D6F42;
+      border-radius: 4px; padding: 0.4rem 1rem;
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 0.75rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      cursor: pointer; transition: all 0.14s;
+    }}
+    .btn-excel:hover {{ background: #1D6F42; color: #fff; }}
 
     /* GRID */
     .grid {{
-      max-width: 1200px;
-      margin: 0 auto;
+      max-width: 1280px; margin: 0 auto;
       padding: 0 2rem 4rem;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
       gap: 1.2rem;
     }}
 
     /* CARD */
     .card {{
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1.4rem;
-      display: flex; flex-direction: column; gap: 0.8rem;
-      transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
-      position: relative;
-      overflow: hidden;
-      animation: fadeUp 0.4s ease both;
+      background: var(--blanco);
+      border: 1px solid var(--borde);
+      border-radius: 8px; overflow: hidden;
+      display: flex; flex-direction: column;
+      transition: box-shadow 0.18s, transform 0.18s;
+      animation: fadeUp 0.35s ease both;
     }}
     @keyframes fadeUp {{
-      from {{ opacity: 0; transform: translateY(16px); }}
-      to   {{ opacity: 1; transform: translateY(0); }}
+      from {{ opacity:0; transform:translateY(14px); }}
+      to   {{ opacity:1; transform:translateY(0); }}
     }}
     .card:hover {{
       transform: translateY(-3px);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      box-shadow: 0 8px 28px rgba(200,16,46,0.13);
     }}
-    .card.h1 {{ border-left: 3px solid var(--h1c); }}
-    .card.h1:hover {{ border-color: var(--h1c); box-shadow: 0 8px 32px rgba(255,107,53,0.12); }}
-    .card.h2 {{ border-left: 3px solid var(--h2c); }}
-    .card.h2:hover {{ border-color: var(--h2c); box-shadow: 0 8px 32px rgba(0,212,255,0.12); }}
-    .card.h3 {{ border-left: 3px solid var(--h3c); }}
-    .card.h3:hover {{ border-color: var(--h3c); box-shadow: 0 8px 32px rgba(127,255,107,0.12); }}
+    .card-stripe {{ height: 4px; background: var(--rojo); }}
+    .card.h1 .card-stripe {{ background: var(--h1); }}
+    .card.h2 .card-stripe {{ background: var(--h2); }}
+    .card.h3 .card-stripe {{ background: var(--h3); }}
 
+    .card-body {{
+      padding: 1.2rem; flex: 1;
+      display: flex; flex-direction: column; gap: 0.75rem;
+    }}
     .card-top {{
       display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
     }}
     .hyp-badge {{
-      font-family: 'Syne', sans-serif;
-      font-size: 0.65rem;
-      font-weight: 700;
-      padding: 0.2rem 0.55rem;
-      border-radius: 3px;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
+      font-size: 0.62rem; font-weight: 700;
+      padding: 0.18rem 0.55rem; border-radius: 3px;
+      text-transform: uppercase; letter-spacing: 0.1em;
     }}
-    .hyp-badge.h1 {{ background: rgba(255,107,53,0.15); color: var(--h1c); }}
-    .hyp-badge.h2 {{ background: rgba(0,212,255,0.15); color: var(--h2c); }}
-    .hyp-badge.h3 {{ background: rgba(127,255,107,0.15); color: var(--h3c); }}
+    .hyp-badge.h1 {{ background:#FDECEA; color:var(--h1); }}
+    .hyp-badge.h2 {{ background:#FFF3E6; color:var(--h2); }}
+    .hyp-badge.h3 {{ background:#E8F5EC; color:var(--h3); }}
 
-    .source-badge {{
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.62rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+    .source-chip {{
+      font-size: 0.62rem; font-weight: 700;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+      background: var(--gris2); border: 1px solid var(--borde);
+      padding: 0.15rem 0.5rem; border-radius: 3px;
     }}
     .card-title {{
-      font-family: 'Lora', serif;
-      font-size: 0.95rem;
-      font-weight: 600;
-      color: var(--text);
-      line-height: 1.5;
+      font-family: 'Source Serif 4', serif;
+      font-size: 0.97rem; font-weight: 600;
+      color: var(--texto); line-height: 1.5;
     }}
-    .card-precursor {{
-      font-size: 0.82rem;
-      color: var(--muted);
-      font-style: italic;
-      border-left: 2px solid var(--border);
-      padding-left: 0.7rem;
+
+    /* PRECURSOR */
+    .precursor-block {{
+      background: var(--rojo-light);
+      border-left: 3px solid var(--rojo-mid);
+      border-radius: 0 4px 4px 0;
+      padding: 0.65rem 0.85rem;
     }}
+    .precursor-label {{
+      font-size: 0.6rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--rojo); margin-bottom: 0.3rem;
+    }}
+    .precursor-text {{
+      font-size: 0.83rem; color: #5a1a25;
+      line-height: 1.5; font-style: italic;
+    }}
+
+    /* CARD FOOTER */
     .card-footer {{
       display: flex; align-items: center; justify-content: space-between;
-      gap: 0.5rem; margin-top: auto;
+      gap: 0.5rem; flex-wrap: wrap;
+      padding: 0.7rem 1.2rem;
+      border-top: 1px solid var(--gris2);
+      background: var(--gris);
     }}
-    .card-meta {{
-      display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;
-    }}
+    .meta-row {{ display: flex; gap: 0.5rem; flex-wrap: wrap; }}
     .meta-chip {{
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.62rem;
-      color: var(--muted);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      padding: 0.15rem 0.5rem;
-      border-radius: 3px;
+      font-size: 0.63rem; color: var(--muted);
+      background: var(--blanco); border: 1px solid var(--borde);
+      padding: 0.15rem 0.5rem; border-radius: 3px;
     }}
     .card-link {{
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.65rem;
-      color: var(--accent);
-      text-decoration: none;
-      padding: 0.3rem 0.7rem;
-      border: 1px solid var(--accent);
-      border-radius: 3px;
-      white-space: nowrap;
-      transition: all 0.15s;
+      font-size: 0.68rem; font-weight: 700;
+      color: var(--rojo); text-decoration: none;
+      padding: 0.3rem 0.8rem;
+      border: 1.5px solid var(--rojo);
+      border-radius: 4px; white-space: nowrap;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      transition: all 0.14s;
     }}
-    .card-link:hover {{ background: var(--accent); color: var(--bg); }}
+    .card-link:hover {{ background: var(--rojo); color: #fff; }}
 
-    /* EMPTY STATE */
+    /* EMPTY */
     .empty {{
-      grid-column: 1/-1;
-      text-align: center;
-      padding: 4rem;
-      color: var(--muted);
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.85rem;
+      grid-column: 1/-1; text-align: center;
+      padding: 4rem 1rem; color: var(--muted); font-size: 0.9rem;
     }}
 
     /* FOOTER */
     footer {{
-      border-top: 1px solid var(--border);
-      padding: 1.5rem 2rem;
-      text-align: center;
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.65rem;
-      color: var(--muted);
-      letter-spacing: 0.08em;
+      background: var(--rojo-dark); color: rgba(255,255,255,0.75);
+      padding: 1.2rem 2rem; text-align: center;
+      font-size: 0.68rem; letter-spacing: 0.06em;
     }}
 
-    @media (max-width: 600px) {{
+    @media (max-width: 640px) {{
       .grid {{ grid-template-columns: 1fr; padding: 0 1rem 3rem; }}
-      .hero {{ padding: 2rem 1rem 1.5rem; }}
-      .filters, .search-wrap {{ padding: 0 1rem; }}
-      header {{ padding: 0.8rem 1rem; }}
+      .hero {{ padding: 1.5rem 1rem 1rem; }}
+      .stats-bar, .toolbar {{ padding: 0 1rem; }}
+      .header-inner {{ padding: 0.8rem 1rem; }}
+      .btn-excel {{ margin-left: 0; }}
     }}
   </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">Vigilancia <span>Prospectiva</span></div>
-  <div class="date-badge">{s['start']} — {s['end']}</div>
+  <div class="header-inner">
+    <div class="header-left">
+      <div class="header-title">
+        Monitor de Noticias
+        <span>CEPLAN — Centro Nacional de Planeamiento Estratégico</span>
+      </div>
+    </div>
+    <div class="date-badge">{s['start']} &mdash; {s['end']}</div>
+  </div>
 </header>
 
 <div class="hero">
-  <div class="hero-label">▸ Reporte de inteligencia</div>
-  <h1>Monitor de <em>Noticias</em><br>Geopolíticas</h1>
-  <div class="stats-bar" id="statsBar"></div>
+  <div class="hero-inner">
+    <div class="hero-eyebrow">▸ Vigilancia Prospectiva</div>
+    <h1>Reporte de <em>Inteligencia</em> Geopolítica</h1>
+    <div class="variable-tag" id="varTag"></div>
+  </div>
 </div>
 
-<div class="search-wrap">
-  <input class="search-input" id="searchInput" type="text" placeholder="Buscar por título, país, fuente…"/>
-</div>
+<div class="stats-bar" id="statsBar"></div>
 
-<div class="filters" id="filterBar">
-  <span class="filter-label">Filtrar:</span>
-  <button class="filter-btn active" data-filter="all">Todas</button>
-  <button class="filter-btn h1" data-filter="H1">H1</button>
-  <button class="filter-btn h2" data-filter="H2">H2</button>
-  <button class="filter-btn h3" data-filter="H3">H3</button>
+<div class="toolbar">
+  <div class="filter-group">
+    <span class="filter-label">Filtrar:</span>
+    <button class="filter-btn active" data-filter="all">Todas</button>
+    <button class="filter-btn h1" data-filter="H1">H1</button>
+    <button class="filter-btn h2" data-filter="H2">H2</button>
+    <button class="filter-btn h3" data-filter="H3">H3</button>
+  </div>
+  <input class="search-input" id="searchInput" type="text" placeholder="Buscar por título, país, fuente, precursor…"/>
+  <button class="btn-excel" id="btnExcel">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+    Descargar Excel
+  </button>
 </div>
 
 <div class="grid" id="grid"></div>
@@ -452,52 +441,68 @@ const RAW = {data_json};
 const noticias = RAW.noticias || [];
 const meta = RAW.metadata || {{}};
 
+// Variable tag
+(function() {{
+  const el = document.getElementById('varTag');
+  const v = "{s['variable']}";
+  if (v) el.textContent = v; else el.style.display = 'none';
+}})();
+
 // STATS
-function buildStats() {{
-  const h1 = noticias.filter(n => n.Hipotesis === 'H1').length;
-  const h2 = noticias.filter(n => n.Hipotesis === 'H2').length;
-  const h3 = noticias.filter(n => n.Hipotesis === 'H3').length;
-  const sources = [...new Set(noticias.map(n => n.Fuente || n.fuente).filter(Boolean))].length;
-  const bar = document.getElementById('statsBar');
-  [
-    [noticias.length, 'Total noticias'],
-    [h1, 'Hipótesis 1'],
-    [h2, 'Hipótesis 2'],
-    [h3, 'Hipótesis 3'],
-    [sources, 'Fuentes activas'],
-  ].forEach(([num, label]) => {{
-    bar.innerHTML += `<div class="stat"><div class="stat-num">${{num}}</div><div class="stat-label">${{label}}</div></div>`;
+(function() {{
+  const counts = {{H1:0, H2:0, H3:0}};
+  noticias.forEach(n => {{
+    const h = (n.Hipotesis||n.hipotesis||'').toUpperCase();
+    if (counts[h] !== undefined) counts[h]++;
   }});
-}}
+  const srcs = new Set(noticias.map(n => n.Fuente||n.fuente).filter(Boolean)).size;
+  const bar = document.getElementById('statsBar');
+  [[noticias.length,'Total Noticias'],[counts.H1,'Hipótesis 1'],
+   [counts.H2,'Hipótesis 2'],[counts.H3,'Hipótesis 3'],[srcs,'Fuentes']].forEach(([n,l]) => {{
+    const d = document.createElement('div');
+    d.className = 'stat';
+    d.innerHTML = `<div class="stat-num">${{n}}</div><div class="stat-label">${{l}}</div>`;
+    bar.appendChild(d);
+  }});
+}})();
 
 // CARD
 function card(n, i) {{
-  const hyp = (n.Hipotesis || n.hipotesis || '').toUpperCase();
-  const hc = hyp === 'H1' ? 'h1' : hyp === 'H2' ? 'h2' : 'h3';
-  const title = n['Hecho/Titular'] || n.titulo || n.title || '—';
-  const source = n.Fuente || n.fuente || '—';
-  const date = n.Fecha || n.fecha || '—';
-  const country = n.País || n.pais || n.country || '—';
-  const precursor = n['Hecho precursor'] || n.precursor || '';
-  const link = n.Enlace || n.enlace || n.url || '#';
+  const hyp = (n.Hipotesis||n.hipotesis||'').toUpperCase();
+  const hc = hyp==='H1'?'h1':hyp==='H2'?'h2':'h3';
+  const title = n['Hecho/Titular']||n.titulo||'—';
+  const source = n.Fuente||n.fuente||'—';
+  const date = n.Fecha||n.fecha||'—';
+  const country = n.País||n.pais||'—';
+  const precursor = n['Hecho precursor']||n.precursor||'';
+  const link = n.Enlace||n.enlace||'#';
+  const delay = Math.min(i*0.04, 0.6);
   return `
-    <div class="card ${{hc}}" style="animation-delay:${{i * 0.04}}s" 
-         data-hyp="${{hyp}}" data-title="${{title.toLowerCase()}}" 
-         data-source="${{source.toLowerCase()}}" data-country="${{country.toLowerCase()}}">
+  <div class="card ${{hc}}" style="animation-delay:${{delay}}s"
+       data-hyp="${{hyp}}" data-title="${{title.toLowerCase()}}"
+       data-source="${{source.toLowerCase()}}" data-country="${{country.toLowerCase()}}"
+       data-precursor="${{precursor.toLowerCase()}}">
+    <div class="card-stripe"></div>
+    <div class="card-body">
       <div class="card-top">
-        <span class="hyp-badge ${{hc}}">${{hyp || '—'}}</span>
-        <span class="source-badge">${{source}}</span>
+        <span class="hyp-badge ${{hc}}">${{hyp||'—'}}</span>
+        <span class="source-chip">${{source}}</span>
       </div>
       <div class="card-title">${{title}}</div>
-      ${{precursor ? `<div class="card-precursor">${{precursor}}</div>` : ''}}
-      <div class="card-footer">
-        <div class="card-meta">
-          <span class="meta-chip">📅 ${{date}}</span>
-          <span class="meta-chip">🌍 ${{country}}</span>
-        </div>
-        ${{link !== '#' ? `<a class="card-link" href="${{link}}" target="_blank" rel="noopener">Ver →</a>` : ''}}
+      ${{precursor ? `
+      <div class="precursor-block">
+        <div class="precursor-label">⚡ Hecho Precursor</div>
+        <div class="precursor-text">${{precursor}}</div>
+      </div>` : ''}}
+    </div>
+    <div class="card-footer">
+      <div class="meta-row">
+        <span class="meta-chip">📅 ${{date}}</span>
+        <span class="meta-chip">🌍 ${{country}}</span>
       </div>
-    </div>`;
+      ${{link!=='#'?`<a class="card-link" href="${{link}}" target="_blank" rel="noopener">Ver nota →</a>`:''}}
+    </div>
+  </div>`;
 }}
 
 function render(list) {{
@@ -510,25 +515,25 @@ function render(list) {{
 }}
 
 // FILTER + SEARCH
-let activeFilter = 'all';
-let searchTerm = '';
+let activeFilter = 'all', searchTerm = '';
 
 function applyFilters() {{
-  let result = noticias;
-  if (activeFilter !== 'all') result = result.filter(n => (n.Hipotesis||n.hipotesis||'').toUpperCase() === activeFilter);
+  let r = noticias;
+  if (activeFilter !== 'all')
+    r = r.filter(n => (n.Hipotesis||n.hipotesis||'').toUpperCase() === activeFilter);
   if (searchTerm) {{
     const q = searchTerm.toLowerCase();
-    result = result.filter(n => {{
-      const title = (n['Hecho/Titular']||n.titulo||'').toLowerCase();
-      const src = (n.Fuente||n.fuente||'').toLowerCase();
-      const country = (n.País||n.pais||'').toLowerCase();
-      return title.includes(q) || src.includes(q) || country.includes(q);
+    r = r.filter(n => {{
+      return (n['Hecho/Titular']||n.titulo||'').toLowerCase().includes(q)
+          || (n.Fuente||n.fuente||'').toLowerCase().includes(q)
+          || (n.País||n.pais||'').toLowerCase().includes(q)
+          || (n['Hecho precursor']||n.precursor||'').toLowerCase().includes(q);
     }});
   }}
-  render(result);
+  render(r);
 }}
 
-document.getElementById('filterBar').addEventListener('click', e => {{
+document.querySelector('.toolbar').addEventListener('click', e => {{
   if (!e.target.matches('.filter-btn')) return;
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   e.target.classList.add('active');
@@ -541,17 +546,37 @@ document.getElementById('searchInput').addEventListener('input', e => {{
   applyFilters();
 }});
 
-// FOOTER
-function buildFooter() {{
-  const f = document.getElementById('footer');
-  const gen = meta.generated_at ? new Date(meta.generated_at).toLocaleString('es-PE') : '—';
-  const model = meta.model || '—';
-  f.textContent = `Generado: ${{gen}} · Modelo: ${{model}} · Sesión válida 24h`;
-}}
+// EXCEL EXPORT
+document.getElementById('btnExcel').addEventListener('click', () => {{
+  const rows = noticias.map(n => ({{
+    'Hipótesis':       n.Hipotesis||n.hipotesis||'',
+    'Hecho/Titular':   n['Hecho/Titular']||n.titulo||'',
+    'Hecho Precursor': n['Hecho precursor']||n.precursor||'',
+    'Fecha':           n.Fecha||n.fecha||'',
+    'Fuente':          n.Fuente||n.fuente||'',
+    'País':            n.País||n.pais||'',
+    'Enlace':          n.Enlace||n.enlace||'',
+  }}));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{{wch:8}},{{wch:62}},{{wch:55}},{{wch:13}},{{wch:14}},{{wch:20}},{{wch:60}}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Noticias');
+  const d = "{s['start']}_al_{s['end']}".replace(/-/g,'');
+  XLSX.writeFile(wb, `Vigilancia_Prospectiva_${{d}}.xlsx`);
+}});
 
-buildStats();
+// FOOTER
+(function() {{
+  const gen = meta.generated_at ? new Date(meta.generated_at).toLocaleString('es-PE') : '—';
+  const errors = meta.stats?.errors ?? 0;
+  document.getElementById('footer').innerHTML =
+    `CEPLAN — Centro Nacional de Planeamiento Estratégico &nbsp;|&nbsp;
+     Generado: ${{gen}} &nbsp;|&nbsp; Modelo: ${{meta.model||'—'}} &nbsp;|&nbsp;
+     ${{meta.total_news||noticias.length}} noticias procesadas
+     ${{errors>0 ? ' &nbsp;|&nbsp; ⚠️ '+errors+' errores' : ''}} &nbsp;|&nbsp; Sesión válida 24h`;
+}})();
+
 render(noticias);
-buildFooter();
 </script>
 </body>
 </html>"""
